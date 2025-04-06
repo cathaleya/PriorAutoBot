@@ -4,7 +4,7 @@ import figlet from "figlet";
 import { ethers } from "ethers";
 
 const RPC_URL = process.env.RPC_URL;
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const PRIVATE_KEYS = process.env.PRIVATE_KEY.split(',');
 const USDC_ADDRESS = "0x109694D75363A75317A8136D80f50F871E81044e";
 const USDT_ADDRESS = "0x014397DaEa96CaC46DbEdcbce50A42D5e0152B2E";
 const PRIOR_ADDRESS = "0xc19Ec2EEBB009b2422514C51F9118026f1cD89ba";
@@ -12,7 +12,9 @@ const routerAddress = "0x0f1DADEcc263eB79AE3e4db0d57c49a8b6178B0B";
 const FAUCET_ADDRESS = "0xCa602D9E45E1Ed25105Ee43643ea936B8e2Fd6B7";
 const NETWORK_NAME = "PRIOR TESTNET";
 
-let walletInfo = {
+// Store wallet info for each wallet
+let walletsInfo = PRIVATE_KEYS.map((_, index) => ({
+  index: index + 1,
   address: "",
   balanceETH: "0.00",
   balancePrior: "0.00",
@@ -20,11 +22,13 @@ let walletInfo = {
   balanceUSDT: "0.00",
   network: "Prior Testnet",
   status: "Initializing"
-};
+}));
+
+let currentWalletIndex = 0;
 let transactionLogs = [];
 let priorSwapRunning = false;
 let priorSwapCancelled = false;
-let globalWallet = null;
+let globalWallets = [];
 
 const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -200,6 +204,18 @@ const priorSubMenu = blessed.list({
 });
 priorSubMenu.hide();
 
+const walletSelector = blessed.list({
+  label: " Select Wallet ",
+  left: "60%",
+  keys: true,
+  vi: true,
+  mouse: true,
+  border: { type: "line" },
+  style: { fg: "white", bg: "default", border: { fg: "yellow" }, selected: { bg: "blue", fg: "white" } },
+  items: PRIVATE_KEYS.map((_, index) => `Wallet ${index + 1}`)
+});
+walletSelector.hide();
+
 const promptBox = blessed.prompt({
   parent: screen,
   border: "line",
@@ -221,9 +237,10 @@ screen.append(logsBox);
 screen.append(walletBox);
 screen.append(mainMenu);
 screen.append(priorSubMenu);
+screen.append(walletSelector);
 
 function getMainMenuItems() {
-  let items = ["Prior Swap", "Clam Faucet", "Clear Transaction Logs", "Refresh", "Exit"];
+  let items = ["Select Wallet", "Prior Swap", "Clam Faucet", "Clear Transaction Logs", "Refresh", "Exit"];
   if (priorSwapRunning) {
     items.unshift("Stop All Transactions");
   }
@@ -239,12 +256,14 @@ function getPriorMenuItems() {
 }
 
 function updateWallet() {
-  const shortAddress = walletInfo.address ? getShortAddress(walletInfo.address) : "N/A";
-  const prior = walletInfo.balancePrior ? Number(walletInfo.balancePrior).toFixed(2) : "0.00";
-  const usdc = walletInfo.balanceUSDC ? Number(walletInfo.balanceUSDC).toFixed(2) : "0.00";
-  const usdt = walletInfo.balanceUSDT ? Number(walletInfo.balanceUSDT).toFixed(2) : "0.00";
-  const eth = walletInfo.balanceETH ? Number(walletInfo.balanceETH).toFixed(4) : "0.000";
-  const content = `┌── Address : {bright-yellow-fg}${shortAddress}{/bright-yellow-fg}
+  const currentWallet = walletsInfo[currentWalletIndex];
+  const shortAddress = currentWallet.address ? getShortAddress(currentWallet.address) : "N/A";
+  const prior = currentWallet.balancePrior ? Number(currentWallet.balancePrior).toFixed(2) : "0.00";
+  const usdc = currentWallet.balanceUSDC ? Number(currentWallet.balanceUSDC).toFixed(2) : "0.00";
+  const usdt = currentWallet.balanceUSDT ? Number(currentWallet.balanceUSDT).toFixed(2) : "0.00";
+  const eth = currentWallet.balanceETH ? Number(currentWallet.balanceETH).toFixed(4) : "0.000";
+  const content = `┌── Wallet  : {bright-yellow-fg}${currentWallet.index}{/bright-yellow-fg}
+└── Address : {bright-yellow-fg}${shortAddress}{/bright-yellow-fg}
 │   ├── ETH     : {bright-green-fg}${eth}{/bright-green-fg}
 │   ├── PRIOR   : {bright-green-fg}${prior}{/bright-green-fg}
 │   ├── USDC    : {bright-green-fg}${usdc}{/bright-green-fg}
@@ -259,9 +278,9 @@ function updateWallet() {
 async function updateWalletData() {
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    globalWallet = wallet;
-    walletInfo.address = wallet.address;
+    const wallet = new ethers.Wallet(PRIVATE_KEYS[currentWalletIndex], provider);
+    globalWallets[currentWalletIndex] = wallet;
+    walletsInfo[currentWalletIndex].address = wallet.address;
 
     const [ethBalance, balancePrior, balanceUSDC, balanceUSDT] = await Promise.all([
       provider.getBalance(wallet.address),
@@ -270,16 +289,26 @@ async function updateWalletData() {
       new ethers.Contract(USDT_ADDRESS, ERC20_ABI, provider).balanceOf(wallet.address)
     ]);
 
-    walletInfo.balanceETH = ethers.formatEther(ethBalance);
-    walletInfo.balancePrior = ethers.formatEther(balancePrior);
-    walletInfo.balanceUSDC = ethers.formatUnits(balanceUSDC, 6);
-    walletInfo.balanceUSDT = ethers.formatUnits(balanceUSDT, 6);
+    walletsInfo[currentWalletIndex].balanceETH = ethers.formatEther(ethBalance);
+    walletsInfo[currentWalletIndex].balancePrior = ethers.formatEther(balancePrior);
+    walletsInfo[currentWalletIndex].balanceUSDC = ethers.formatUnits(balanceUSDC, 6);
+    walletsInfo[currentWalletIndex].balanceUSDT = ethers.formatUnits(balanceUSDT, 6);
 
     updateWallet();
-    addLog("Saldo & Wallet Updated !!", "system");
+    addLog(`Saldo Wallet ${currentWalletIndex + 1} Updated !!`, "system");
   } catch (error) {
-    addLog("Gagal mengambil data wallet: " + error.message, "system");
+    addLog(`Gagal mengambil data wallet ${currentWalletIndex + 1}: ${error.message}`, "system");
   }
+}
+
+async function updateAllWalletsData() {
+  for (let i = 0; i < PRIVATE_KEYS.length; i++) {
+    currentWalletIndex = i;
+    await updateWalletData();
+  }
+  // Reset to first wallet
+  currentWalletIndex = 0;
+  updateWallet();
 }
 
 function stopAllTransactions() {
@@ -290,9 +319,9 @@ function stopAllTransactions() {
 }
 
 async function autoClaimFaucet() {
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    const faucetContract = new ethers.Contract(FAUCET_ADDRESS, FAUCET_ABI, wallet);
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet = new ethers.Wallet(PRIVATE_KEYS[currentWalletIndex], provider);
+  const faucetContract = new ethers.Contract(FAUCET_ADDRESS, FAUCET_ABI, wallet);
 
   try {
     const lastClaim = await faucetContract.lastClaimTime(wallet.address);
@@ -307,7 +336,7 @@ async function autoClaimFaucet() {
       addLog(`You have to wait ${waitHours} Hours ${waitMinutes} minutes before claiming again.`, "warning");
       return;
     }
-    addLog("Starting Claim Faucet PRIOR...", "system");
+    addLog(`Starting Claim Faucet PRIOR for Wallet ${currentWalletIndex + 1}...`, "system");
     const tx = await faucetContract.claimTokens();
     const txHash = tx.hash;
     addLog(`Transaction Sent!!. Hash: ${getShortHash(txHash)}`, "warning");
@@ -326,7 +355,7 @@ async function autoClaimFaucet() {
 
 async function runAutoSwap() {
   promptBox.setFront();
-  promptBox.readInput("Masukkan Jumalah Swap:", "", async (err, value) => {
+  promptBox.readInput("Masukkan Jumlah Swap:", "", async (err, value) => {
     promptBox.hide();
     safeRender();
     if (err || !value) {
@@ -339,13 +368,14 @@ async function runAutoSwap() {
       return;
     }
     addLog(`Prior Swap: Anda Memasukkan ${loopCount} kali auto swap.`, "prior");
-   if (priorSwapRunning) {
+    if (priorSwapRunning) {
       addLog("Prior: Transaksi Sedang Berjalan. Silahkan stop transaksi terlebih dahulu.", "rubic");
       return;
     }
+    
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    globalWallet = wallet;
+    const wallet = new ethers.Wallet(PRIVATE_KEYS[currentWalletIndex], provider);
+    globalWallets[currentWalletIndex] = wallet;
 
     const priorToken = new ethers.Contract(PRIOR_ADDRESS, ERC20_ABI, wallet);
     const usdcToken = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, provider);
@@ -388,7 +418,7 @@ async function runAutoSwap() {
       const paramHex = ethers.zeroPadValue(ethers.toBeHex(amountPrior), 32);
       const txData = functionSelector + paramHex.slice(2);
       try {
-        addLog(`Prior: Melakukan swap PRIOR ➯ ${swapTarget}, Ammount ${ethers.formatEther(amountPrior)} PRIOR`, "prior");
+        addLog(`Prior: Melakukan swap PRIOR ➯ ${swapTarget}, Amount ${ethers.formatEther(amountPrior)} PRIOR`, "prior");
         const tx = await wallet.sendTransaction({
           to: routerAddress,
           data: txData,
@@ -400,7 +430,7 @@ async function runAutoSwap() {
         if (receipt.status === 1) {
           addLog(`Prior: Swap PRIOR ➯ ${swapTarget} berhasil.`, "prior");
           await updateWalletData();
-          addLog(`Prior: Swap Ke  ${i} Selesai.`, "prior");
+          addLog(`Prior: Swap Ke ${i} Selesai.`, "prior");
         } else {
           addLog(`Prior: Swap PRIOR ➯ ${swapTarget} gagal.`, "prior");
         }
@@ -453,6 +483,10 @@ function adjustLayout() {
   priorSubMenu.left = mainMenu.left;
   priorSubMenu.width = mainMenu.width;
   priorSubMenu.height = mainMenu.height;
+  walletSelector.top = mainMenu.top;
+  walletSelector.left = mainMenu.left;
+  walletSelector.width = mainMenu.width;
+  walletSelector.height = mainMenu.height;
   safeRender();
 }
 
@@ -465,6 +499,10 @@ mainMenu.on("select", (item) => {
     stopAllTransactions();
     mainMenu.setItems(getMainMenuItems());
     mainMenu.focus();
+    safeRender();
+  } else if (selected === "Select Wallet") {
+    walletSelector.show();
+    walletSelector.focus();
     safeRender();
   } else if (selected === "Prior Swap") {
     priorSubMenu.show();
@@ -482,6 +520,17 @@ mainMenu.on("select", (item) => {
   } else if (selected === "Exit") {
     process.exit(0);
   }
+});
+
+walletSelector.on("select", (item) => {
+  const selectedIndex = walletSelector.getItemIndex(item);
+  currentWalletIndex = selectedIndex;
+  walletSelector.hide();
+  mainMenu.show();
+  mainMenu.focus();
+  updateWalletData();
+  addLog(`Selected Wallet ${currentWalletIndex + 1}`, "system");
+  safeRender();
 });
 
 priorSubMenu.on("select", (item) => {
@@ -514,7 +563,10 @@ screen.key(["escape", "q", "C-c"], () => process.exit(0));
 screen.key(["C-up"], () => { logsBox.scroll(-1); safeRender(); });
 screen.key(["C-down"], () => { logsBox.scroll(1); safeRender(); });
 
+// Initialize global wallets array
+globalWallets = PRIVATE_KEYS.map(key => new ethers.Wallet(key, new ethers.JsonRpcProvider(RPC_URL)));
+
 safeRender();
 mainMenu.focus();
+updateAllWalletsData();
 updateLogs();
-updateWalletData();
