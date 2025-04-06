@@ -1,5 +1,8 @@
 # PriorAutoBot-NTE
-git clone
+
+git clone https://github.com/cathaleya/PriorAutoBot.git  
+
+cd PriorAutoBot
 
 npm install
 
