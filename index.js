@@ -140,8 +140,8 @@ const headerBox = blessed.box({
   style: { fg: "white", bg: "default" }
 });
 
-figlet.text("NT EXHAUST".toUpperCase(), { font: "ANSI Shadow", horizontalLayout: "default" }, (err, data) => {
-  if (err) headerBox.setContent("{center}{bold}NT Exhaust{/bold}{/center}");
+figlet.text("Cathaleya".toUpperCase(), { font: "ANSI Shadow", horizontalLayout: "default" }, (err, data) => {
+  if (err) headerBox.setContent("{center}{bold}Cathaleya{/bold}{/center}");
   else headerBox.setContent(`{center}{bold}{bright-cyan-fg}${data}{/bright-cyan-fg}{/bold}{/center}`);
   safeRender();
 });
@@ -427,7 +427,6 @@ async function runAutoSwap() {
     addLog("Prior Swap: Auto swap selesai.", "prior");
   });
 }
-
 
 function adjustLayout() {
   const screenHeight = screen.height;
